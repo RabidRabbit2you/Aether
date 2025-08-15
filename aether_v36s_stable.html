@@ -1,9 +1,4 @@
-
-# Build Aether V3.6s — stable, compact, no truncation. Includes: render, camera, HUD, minimap,
-# inventory/equipment/bank/spells, NPCs + combat panel, tiles + portals, shop/quests, context menu, dev tools.
-from pathlib import Path
-
-html = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
@@ -371,8 +366,3 @@ document.addEventListener('DOMContentLoaded',()=>{
 </script>
 </body>
 </html>
-"""
-p = Path("/mnt/data/aether_v36s_stable.html")
-p.parent.mkdir(parents=True, exist_ok=True)
-p.write_text(html, encoding="utf-8")
-print(str(p))
