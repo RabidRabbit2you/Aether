@@ -226,12 +226,13 @@ class Game{
   }
   loop(){ this.engine.runRenderLoop(()=>{
     const dt=this.engine.getDeltaTime();
-    this.scene.render();
-    this.player.update(this.mode);
+    this.player.update(dt);
+    if(this.mode==='follow') this.camera.cam.target=this.player.mesh.position;
     this.npcs.update(this.player,dt);
     this.resources.update(this.player,dt,()=>this.quests.complete('q2'));
     this.combat.update(dt);
     this.weather.update(dt);
+    this.scene.render();
     this.ui.update();
   }); }
   save(){ const data={inv:this.inventory.items,bank:this.bank.items,equip:this.equipment.slots,gold:this.gold,aether:this.aether,level:this.player.level,xp:this.player.xp,tiles:[...this.tiles.owned],portals:this.network.portals}; localStorage.setItem('sc_v36s',JSON.stringify(data)); CHAT.log('[Save] Stored.'); }
@@ -254,7 +255,7 @@ class Cam{
 class Player{
   constructor(scene){ this.scene=scene; this.mesh=BABYLON.MeshBuilder.CreateCapsule('player',{height:3,radius:1},scene); this.mesh.position.set(0,2.5,0); const m=new BABYLON.StandardMaterial('pm',scene); m.emissiveColor=new BABYLON.Color3(1,1,1); this.mesh.material=m; this.target=this.mesh.position.clone(); this.speed=0.055; this.hpMax=100; this.hp=100; this.manaMax=100; this.mana=100; this.shield=0; this.xp=0; this.level=1; }
   moveTo(p){ this.target.copyFrom(p); }
-  update(mode){ const v=this.target.subtract(this.mesh.position); const L=v.length(); if(L>0.02){ v.normalize(); this.mesh.position.addInPlace(v.scale(this.speed*(game.engine.getFps()?60/game.engine.getFps():1)*4.5)); } if(mode==='follow') game.camera.cam.target=this.mesh.position; }
+  update(dt){ const v=this.target.subtract(this.mesh.position); const L=v.length(); if(L>0.02){ v.normalize(); this.mesh.position.addInPlace(v.scale(this.speed*(dt/16.67)*4.5)); } }
 }
 class Inventory{ constructor(size){ this.items=new Array(size).fill(null); } add(it){ if(it.type==='rune'){ for(let i=0;i<this.items.length;i++){const a=this.items[i]; if(a&&a.type==='rune'&&a.rune===it.rune){ a.qty=(a.qty||0)+(it.qty||1); return true;}} } for(let i=0;i<this.items.length;i++) if(!this.items[i]){this.items[i]=it; return true;} CHAT.log('[Inventory] Full'); return false; } removeAt(i){ this.items[i]=null; } }
 class Equipment{ constructor(){ this.slots={Head:null,Chest:null,Legs:null,Boots:null,Gloves:null,Weapon:null,Offhand:null,Amulet:null,Ring:null,Cape:null,Belt:null}; } equip(slot,it){ this.slots[slot]=it; } }
