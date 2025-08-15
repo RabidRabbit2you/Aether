@@ -310,18 +310,20 @@ function showCtxTile(t,x,y,game){ let c=$('ctx'); if(!c){ c=document.createEleme
 function showTileHUD(t,sx,sy){ DOM.tile.title.textContent=`Tile (${t.gx}, ${t.gz})`; DOM.tile.type.textContent=t.type.toUpperCase(); DOM.tile.owner.textContent=t.owner; DOM.tile.value.textContent=t.value+' Æ'; DOM.tile.more.textContent=t.more; DOM.tile.root.style.left=(sx||20)+'px'; DOM.tile.root.style.top=(sy||20)+'px'; DOM.tile.root.style.display='block'; }
 
 /* ===== Boot ===== */
-let game=null;
+var game=null;
 document.addEventListener('DOMContentLoaded',()=>{
   if(!window.BABYLON){ alert('BabylonJS failed to load.'); return; }
-  game=new Game();
+  game = new Game();
+  window.game = game;
+  fitCanvas();
   game.camera.cam.setPosition(new BABYLON.Vector3(24,18,-24));
   game.camera.cam.target=game.player.mesh.position;
-  CHAT.init();
 });
 </script>
 </body>
 </html>
 """
 p = Path("/mnt/data/aether_v36s_stable.html")
+p.parent.mkdir(parents=True, exist_ok=True)
 p.write_text(html, encoding="utf-8")
 print(str(p))
