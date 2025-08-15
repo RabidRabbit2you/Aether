@@ -225,12 +225,13 @@ class Game{
     if(name==='inv') this.ui.renderInv(); if(name==='equip') this.ui.renderEquip(); if(name==='bank') this.ui.renderBank(); if(name==='spell') this.spells.render(); if(name==='quest') this.quests.render(); if(name==='shop') this.shop.render(); if(name==='portal') this.network.render();
   }
   loop(){ this.engine.runRenderLoop(()=>{
+    const dt=this.engine.getDeltaTime();
     this.scene.render();
     this.player.update(this.mode);
-    this.npcs.update(this.player,this.engine.getDeltaTime());
-    this.resources.update(this.player,this.engine.getDeltaTime(),()=>this.quests.complete('q2'));
-    this.combat.update(this.engine.getDeltaTime());
-    this.weather.update(this.engine.getDeltaTime());
+    this.npcs.update(this.player,dt);
+    this.resources.update(this.player,dt,()=>this.quests.complete('q2'));
+    this.combat.update(dt);
+    this.weather.update(dt);
     this.ui.update();
   }); }
   save(){ const data={inv:this.inventory.items,bank:this.bank.items,equip:this.equipment.slots,gold:this.gold,aether:this.aether,level:this.player.level,xp:this.player.xp,tiles:[...this.tiles.owned],portals:this.network.portals}; localStorage.setItem('sc_v36s',JSON.stringify(data)); CHAT.log('[Save] Stored.'); }
