@@ -41,6 +41,13 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 .ctxItem:hover{background:#2a1650}
 #tileHUD{position:fixed;z-index:26;display:none;min-width:240px;max-width:360px;padding:10px;border-radius:12px;border:1px solid var(--edge);background:var(--panel)}
 #chat{position:fixed;left:0;right:0;bottom:0;height:110px;background:#0005;border-top:1px solid #2b1859;padding:6px 10px;overflow:auto;z-index:5}
+/* Console (`) */
+#console{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;width:70%;z-index:25;border:1px solid var(--cyan);border-radius:12px;background:rgba(0,0,0,.82);box-shadow:0 0 14px #00ffff66;display:none}
+#conHead{display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid #1a4566}
+#conTitle{font-weight:bold;color:#66efff}
+#conBody{max-height:240px;overflow:auto;padding:8px;font-size:12px}
+#conForm{display:flex;gap:8px;padding:8px;border-top:1px solid #1a4566}
+#conInput{flex:1;border:1px solid #1a4566;background:#051421;color:#eaffff;border-radius:8px;padding:8px}
 </style>
 </head>
 <body>
@@ -120,6 +127,13 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 
 <div id="chat"></div>
 
+<!-- Console -->
+<div id="console">
+  <div id="conHead"><span id="conTitle">Developer Console</span></div>
+  <div id="conBody"></div>
+  <form id="conForm"><input id="conInput" placeholder="Enter command (try: /tp 1200 800)" autocomplete="off"/></form>
+</div>
+
 <script src="https://cdn.babylonjs.com/babylon.js"></script>
 <script>
 /* ===== helpers ===== */
@@ -135,8 +149,10 @@ grids:{inv:$('invGrid'),equip:$('equipGrid'),bank:$('bankGrid'),spell:$('spellGr
 buttons:{inv:$('btnInv'),equip:$('btnEquip'),bank:$('btnBank'),spell:$('btnSpell'),quest:$('btnQuest'),shop:$('btnShop'),portal:$('btnPortal'),cam:$('btnCamMode'),save:$('btnSave'),load:$('btnLoad'),dev:$('btnDev')},
 hud:{hpT:$('hpT'),mpT:$('mpT'),shT:$('shT'),hp:$('hp'),mp:$('mp'),sh:$('sh'),gold:$('gold'),aether:$('aether'),comp:$('comp')},
 mini:$('mini').getContext('2d'),
-npc:{root:$('npcPanel'),name:$('npcName'),lv:$('npcLv'),hp:$('npcHP'),stats:$('npcStats'),m:$('aMelee'),r:$('aRanged'),x:$('aMagic'),s:$('aStop')},
-tile:{root:$('tileHUD'),title:$('tileTitle'),type:$('tileType'),owner:$('tileOwner'),value:$('tileValue'),more:$('tileMore'),buy:$('tileBuy'),portal:$('tilePortal'),close:$('tileClose')}};
+ npc:{root:$('npcPanel'),name:$('npcName'),lv:$('npcLv'),hp:$('npcHP'),stats:$('npcStats'),m:$('aMelee'),r:$('aRanged'),x:$('aMagic'),s:$('aStop')},
+ tile:{root:$('tileHUD'),title:$('tileTitle'),type:$('tileType'),owner:$('tileOwner'),value:$('tileValue'),more:$('tileMore'),buy:$('tileBuy'),portal:$('tilePortal'),close:$('tileClose')}};
+const consoleBox=$('console'), conBody=$('conBody'), conForm=$('conForm'), conInput=$('conInput');
+function logCon(line){const d=document.createElement('div');d.textContent=line;conBody.appendChild(d);conBody.scrollTop=conBody.scrollHeight;}
 
 /* ===== Core ===== */
 class Game{
@@ -235,7 +251,7 @@ class Cam{
 
 /* ===== Player / Inv / Equip ===== */
 class Player{
-  constructor(scene){ this.scene=scene; this.mesh=BABYLON.MeshBuilder.CreateCapsule('player',{height:3,radius:1},scene); this.mesh.position.set(0,1.5,0); const m=new BABYLON.StandardMaterial('pm',scene); m.emissiveColor=new BABYLON.Color3(1,1,1); this.mesh.material=m; this.target=this.mesh.position.clone(); this.speed=0.055; this.hpMax=100; this.hp=100; this.manaMax=100; this.mana=100; this.shield=0; this.xp=0; this.level=1; }
+  constructor(scene){ this.scene=scene; this.mesh=BABYLON.MeshBuilder.CreateCapsule('player',{height:3,radius:1},scene); this.mesh.position.set(0,2.5,0); const m=new BABYLON.StandardMaterial('pm',scene); m.emissiveColor=new BABYLON.Color3(1,1,1); this.mesh.material=m; this.target=this.mesh.position.clone(); this.speed=0.055; this.hpMax=100; this.hp=100; this.manaMax=100; this.mana=100; this.shield=0; this.xp=0; this.level=1; }
   moveTo(p){ this.target.copyFrom(p); }
   update(mode){ const v=this.target.subtract(this.mesh.position); const L=v.length(); if(L>0.02){ v.normalize(); this.mesh.position.addInPlace(v.scale(this.speed*(game.engine.getFps()?60/game.engine.getFps():1)*4.5)); } if(mode==='follow') game.camera.cam.target=this.mesh.position; }
 }
@@ -309,19 +325,52 @@ function showCtxNPC(n,x,y,game){ let c=$('ctx'); if(!c){ c=document.createElemen
 function showCtxTile(t,x,y,game){ let c=$('ctx'); if(!c){ c=document.createElement('div'); c.id='ctx'; document.body.appendChild(c);} c.innerHTML=''; c.appendChild(cItem('Examine',()=>{ showTileHUD(t,x+12,y+12); })); c.appendChild(cItem('Buy Tile',()=>game.buyTileHere())); c.appendChild(cItem('Create Portal',()=>game.mkPortalHere())); c.appendChild(cItem('Close',()=>{})); c.style.left=x+'px'; c.style.top=y+'px'; c.style.display='block'; }
 function showTileHUD(t,sx,sy){ DOM.tile.title.textContent=`Tile (${t.gx}, ${t.gz})`; DOM.tile.type.textContent=t.type.toUpperCase(); DOM.tile.owner.textContent=t.owner; DOM.tile.value.textContent=t.value+' Æ'; DOM.tile.more.textContent=t.more; DOM.tile.root.style.left=(sx||20)+'px'; DOM.tile.root.style.top=(sy||20)+'px'; DOM.tile.root.style.display='block'; }
 
+function runCommand(text){
+  const parts=text.trim().split(/\s+/); const cmd=(parts.shift()||'').toLowerCase();
+  if(cmd==='/tp'){
+    const x=parseFloat(parts[0]), z=parseFloat(parts[1]);
+    if(!isNaN(x)&&!isNaN(z)){
+      game.player.mesh.position.x=x; game.player.mesh.position.z=z;
+      logCon(`Teleported to ${x},${z}`); CHAT.log(`[Console] Teleported to ${x},${z}`);
+    }else{
+      logCon('Usage: /tp x z');
+    }
+    return;
+  }
+  if(cmd==='/help'){ logCon('Commands: /help, /tp x z'); return; }
+  logCon('Unknown command');
+}
+addEventListener('keydown',e=>{
+  if(e.key==='`'){
+    consoleBox.style.display=consoleBox.style.display==='none'?'block':'none';
+    if(consoleBox.style.display==='block') setTimeout(()=>conInput.focus(),0);
+    e.preventDefault();
+  }
+});
+conForm.addEventListener('submit',e=>{
+  e.preventDefault();
+  const cmd=conInput.value.trim();
+  if(!cmd) return;
+  logCon('> '+cmd);
+  runCommand(cmd);
+  conInput.value='';
+});
+
 /* ===== Boot ===== */
-let game=null;
+var game=null;
 document.addEventListener('DOMContentLoaded',()=>{
   if(!window.BABYLON){ alert('BabylonJS failed to load.'); return; }
-  game=new Game();
+  game = new Game();
+  window.game = game;
+  fitCanvas();
   game.camera.cam.setPosition(new BABYLON.Vector3(24,18,-24));
   game.camera.cam.target=game.player.mesh.position;
-  CHAT.init();
 });
 </script>
 </body>
 </html>
 """
 p = Path("/mnt/data/aether_v36s_stable.html")
+p.parent.mkdir(parents=True, exist_ok=True)
 p.write_text(html, encoding="utf-8")
 print(str(p))
