@@ -1,0 +1,327 @@
+
+# Build Aether V3.6s — stable, compact, no truncation. Includes: render, camera, HUD, minimap,
+# inventory/equipment/bank/spells, NPCs + combat panel, tiles + portals, shop/quests, context menu, dev tools.
+from pathlib import Path
+
+html = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>Aether — V3.6s (Stable Full)</title>
+<style>
+:root{--bg:#0a0b15;--text:#eaf9ff;--edge:#a655ff;--cyan:#66e0ff;--panel:rgba(12,14,32,.78);--ui:.92;--b:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:ui-monospace,Consolas,monospace;overflow:hidden}
+#game{position:fixed;inset:0;width:100vw;height:100vh;display:block;background:#0b1020}
+#boot{position:fixed;left:12px;top:12px;padding:6px 8px;border:1px dashed var(--cyan);border-radius:10px;background:#0007;z-index:99;font-size:12px}
+#hud{position:fixed;left:12px;top:44px;z-index:20;width:min(340px,92vw);padding:10px;border-radius:12px;border:1px solid var(--cyan);background:#0008;transform:scale(var(--ui));transform-origin:top left}
+.line{display:flex;justify-content:space-between;font-size:12px;margin:4px 0}
+.bar{height:9px;border:1px solid #38a;border-radius:7px;background:#07101c;overflow:hidden}
+.fill{height:100%}
+#hp{background:linear-gradient(90deg,#ff9a9a,#ff3a3a)} #mp{background:linear-gradient(90deg,#66ffff,#3388ff)} #sh{background:linear-gradient(90deg,#b7dcff,#6ba7ff)}
+#miniWrap{position:fixed;right:12px;top:12px;z-index:20;padding:8px;border-radius:10px;border:1px solid var(--edge);background:var(--panel);transform:scale(var(--ui));transform-origin:top right}
+#mini{width:180px;height:180px;display:block;background:#050516;border-radius:8px}
+.panel{position:fixed;right:16px;bottom:180px;z-index:22;padding:12px;border-radius:12px;border:1px solid var(--edge);background:var(--panel);transform:scale(var(--ui));transform-origin:bottom right;max-width:min(92vw,720px)}
+.hidden{display:none}
+.grid{display:grid;gap:8px}
+.grid.inv{grid-template-columns:repeat(6,54px);grid-template-rows:repeat(4,54px)}
+.grid.eq{grid-template-columns:repeat(4,54px);grid-template-rows:repeat(3,54px)}
+.grid.bank{grid-template-columns:repeat(8,52px);grid-template-rows:repeat(6,52px)}
+.slot{width:54px;height:54px;border-radius:10px;border:1px solid #7b49b8;background:rgba(120,50,190,.18);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+.qty{position:absolute;bottom:3px;left:0;right:0;text-align:center;font-size:10px;color:#cfe}
+#toggles{position:fixed;left:12px;bottom:calc(10px + var(--b));z-index:23;display:flex;gap:10px;flex-wrap:wrap;transform:scale(var(--ui));transform-origin:bottom left}
+.tog{width:46px;height:46px;border-radius:12px;border:1px solid var(--edge);background:#0b0620;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 22px #a655ff33}
+#npcPanel{position:fixed;right:12px;bottom:180px;z-index:28;padding:10px;border-radius:12px;border:1px solid var(--edge);background:var(--panel);transform:scale(var(--ui));transform-origin:bottom right;display:none;min-width:260px}
+.hp{height:10px;border:1px solid #7a44e1;border-radius:8px;background:#0b0820;overflow:hidden}
+.hp>div{height:100%;background:linear-gradient(90deg,#ffa1a1,#ff3e3e)}
+#ctx{position:fixed;z-index:40;display:none;min-width:200px;background:var(--panel);border:1px solid var(--edge);border-radius:12px;overflow:hidden}
+.ctxItem{padding:8px 10px;border-bottom:1px solid #4f2a86;cursor:pointer}
+.ctxItem:last-child{border-bottom:none}
+.ctxItem:hover{background:#2a1650}
+#tileHUD{position:fixed;z-index:26;display:none;min-width:240px;max-width:360px;padding:10px;border-radius:12px;border:1px solid var(--edge);background:var(--panel)}
+#chat{position:fixed;left:0;right:0;bottom:0;height:110px;background:#0005;border-top:1px solid #2b1859;padding:6px 10px;overflow:auto;z-index:5}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="boot">Loading Babylon…</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="line"><b>HP</b><span id="hpT">100/100</span></div>
+  <div class="bar"><div id="hp" class="fill" style="width:100%"></div></div>
+  <div class="line"><b>Mana</b><span id="mpT">100/100</span></div>
+  <div class="bar"><div id="mp" class="fill" style="width:100%"></div></div>
+  <div class="line"><b>Shield</b><span id="shT">0</span></div>
+  <div class="bar"><div id="sh" class="fill" style="width:0%"></div></div>
+  <div class="line"><span>Gold</span><span id="gold">0</span></div>
+  <div class="line"><span>Aether</span><span id="aether">0</span></div>
+</div>
+
+<!-- Minimap -->
+<div id="miniWrap">
+  <div id="comp" style="text-align:right;opacity:.8">N</div>
+  <canvas id="mini" width="180" height="180"></canvas>
+</div>
+
+<!-- Panels -->
+<div id="invPanel" class="panel hidden"><b>Inventory</b><div class="grid inv" id="invGrid"></div></div>
+<div id="equipPanel" class="panel hidden"><b>Equipment</b><div class="grid eq" id="equipGrid"></div></div>
+<div id="bankPanel" class="panel hidden"><b>Bank</b><div class="grid bank" id="bankGrid"></div></div>
+<div id="spellPanel" class="panel hidden"><b>Spellbook</b><div class="grid inv" id="spellGrid"></div></div>
+<div id="questPanel" class="panel hidden"><b>Quests</b><ul id="questList"></ul></div>
+<div id="shopPanel" class="panel hidden"><b>Shop</b><ul id="shopList"></ul><hr><b>Sell</b><ul id="sellList"></ul></div>
+<div id="portalPanel" class="panel hidden"><b>Aether Network</b><div id="portalList"></div></div>
+<div id="devPanel" class="panel hidden">
+  <b>Dev ☣</b>
+  <div style="display:grid;gap:6px;margin-top:6px">
+    <div><span>NPC #</span> <input id="npcId" type="number" min="1" value="1" style="width:64px"/> <button id="spawnNpc">Spawn</button> <button id="spawnRnd">Random</button></div>
+    <div><button id="god">God</button> <button id="tp">+10,+10</button> <button id="resetNodes">Reset Nodes</button></div>
+    <div><button id="day">Day</button> <button id="night">Night</button> <button id="buyTile">Buy Tile</button> <button id="mkPortal">Make Portal</button></div>
+  </div>
+</div>
+
+<!-- NPC Panel -->
+<div id="npcPanel">
+  <div style="display:flex;justify-content:space-between;align-items:center"><b id="npcName">Target</b><span id="npcLv">Lv —</span></div>
+  <div class="hp"><div id="npcHP" style="width:100%"></div></div>
+  <div style="margin-top:6px;opacity:.85" id="npcStats">HP —</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+    <button id="aMelee">Melee</button><button id="aRanged">Ranged</button><button id="aMagic">Magic</button><button id="aStop">Stop</button>
+  </div>
+</div>
+
+<!-- Tile HUD -->
+<div id="tileHUD">
+  <div><b id="tileTitle">Tile</b> • <span id="tileType"></span></div>
+  <div>Owner: <b id="tileOwner">—</b></div>
+  <div>Value: <b id="tileValue">100 Æ</b></div>
+  <div id="tileMore" style="opacity:.85;margin-top:6px"></div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <button id="tileBuy">Buy</button><button id="tilePortal">Create Portal</button><button id="tileClose">Close</button>
+  </div>
+</div>
+
+<!-- Toggles -->
+<div id="toggles">
+  <div class="tog" id="btnInv" title="Inventory">🎒</div>
+  <div class="tog" id="btnEquip" title="Equipment">🛡️</div>
+  <div class="tog" id="btnBank" title="Bank">🏦</div>
+  <div class="tog" id="btnSpell" title="Spells">✨</div>
+  <div class="tog" id="btnQuest" title="Quests">📜</div>
+  <div class="tog" id="btnShop" title="Shop">🛒</div>
+  <div class="tog" id="btnPortal" title="Portals">🌀</div>
+  <div class="tog" id="btnCamMode" title="Camera follow/free">🎥</div>
+  <div class="tog" id="btnSave" title="Save">💾</div>
+  <div class="tog" id="btnLoad" title="Load">📂</div>
+  <div class="tog" id="btnDev" title="Developer">☣</div>
+</div>
+
+<div id="chat"></div>
+
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<script>
+/* ===== helpers ===== */
+const $=id=>document.getElementById(id);
+const CHAT={box:null,init(){this.box=$('chat');this.log('[System] V3.6s boot');},log(t){const d=document.createElement('div');d.textContent=t;this.box.appendChild(d);this.box.scrollTop=this.box.scrollHeight;}};
+const BOOT={put:t=>$('boot').textContent=t};
+function fitCanvas(){const c=$('game');const dpr=window.devicePixelRatio||1;c.style.width='100vw';c.style.height='100vh';c.width=Math.floor(innerWidth*dpr);c.height=Math.floor(innerHeight*dpr);if(window.game&&game.engine){game.engine.setHardwareScalingLevel(1/dpr);game.engine.resize();}}
+const RESIC={iron:'#66e0ff',tree:'#7dfc9e',fish:'#99ccff',crystal:'#ff66ff',field:'#c8a36d'};
+
+/* ===== DOM map ===== */
+const DOM={panels:{inv:$('invPanel'),equip:$('equipPanel'),bank:$('bankPanel'),spell:$('spellPanel'),quest:$('questPanel'),shop:$('shopPanel'),portal:$('portalPanel'),dev:$('devPanel')},
+grids:{inv:$('invGrid'),equip:$('equipGrid'),bank:$('bankGrid'),spell:$('spellGrid'),quest:$('questList'),shopBuy:$('shopList'),shopSell:$('sellList'),portal:$('portalList')},
+buttons:{inv:$('btnInv'),equip:$('btnEquip'),bank:$('btnBank'),spell:$('btnSpell'),quest:$('btnQuest'),shop:$('btnShop'),portal:$('btnPortal'),cam:$('btnCamMode'),save:$('btnSave'),load:$('btnLoad'),dev:$('btnDev')},
+hud:{hpT:$('hpT'),mpT:$('mpT'),shT:$('shT'),hp:$('hp'),mp:$('mp'),sh:$('sh'),gold:$('gold'),aether:$('aether'),comp:$('comp')},
+mini:$('mini').getContext('2d'),
+npc:{root:$('npcPanel'),name:$('npcName'),lv:$('npcLv'),hp:$('npcHP'),stats:$('npcStats'),m:$('aMelee'),r:$('aRanged'),x:$('aMagic'),s:$('aStop')},
+tile:{root:$('tileHUD'),title:$('tileTitle'),type:$('tileType'),owner:$('tileOwner'),value:$('tileValue'),more:$('tileMore'),buy:$('tileBuy'),portal:$('tilePortal'),close:$('tileClose')}};
+
+/* ===== Core ===== */
+class Game{
+  constructor(){
+    this.c=$('game'); fitCanvas();
+    this.engine=new BABYLON.Engine(this.c,true,{preserveDrawingBuffer:true,stencil:true,adaptToDeviceRatio:false});
+    this.scene=new BABYLON.Scene(this.engine); this.scene.clearColor=new BABYLON.Color4(0.05,0.06,0.12,1);
+    this.sun=new BABYLON.DirectionalLight('sun',new BABYLON.Vector3(-0.6,-1,0.2),this.scene);
+    new BABYLON.HemisphericLight('hemi',new BABYLON.Vector3(0,1,0),this.scene).intensity=.7;
+    const env=this.scene.createDefaultEnvironment({createSkybox:true,skyboxSize:1200,enableGroundShadow:true});
+    if(env && env.ground) env.ground.isPickable=true;
+    const g=BABYLON.MeshBuilder.CreateGround('ground',{width:4000,height:4000},this.scene);
+    const gm=new BABYLON.StandardMaterial('gm',this.scene); gm.diffuseColor=new BABYLON.Color3(0.12,0.16,0.22); g.material=gm;
+
+    this.player=new Player(this.scene);
+    this.camera=new Cam(this.scene,this.c,this.player.mesh);
+
+    this.inventory=new Inventory(30); this.equipment=new Equipment(); this.bank=new Inventory(56);
+    this.resources=new Resources(this.scene);
+    this.npcs=new NPCSystem(this.scene);
+    this.combat=new Combat(this.scene,this.player,this.npcs);
+    this.spells=new Spells(this.combat,this.inventory);
+    this.shop=new Shop(this); this.quests=new Quests(this);
+    this.tiles=new Tiles(this.scene); this.network=new AetherNetwork(this);
+    this.weather=new Weather(this.scene,this.sun);
+    this.ui=new UI(this);
+
+    this.gold=100; this.aether=30; this.mode='free'; this.openPanel=null;
+
+    this.seed(); this.events(); this.loop();
+    CHAT.init(); BOOT.put('Engine started');
+  }
+  seed(){
+    ['Aether','Embri','Glacia','Zeph','Terra','Vitae','Aegis'].forEach(k=>this.inventory.add({type:'rune',rune:k,qty:30}));
+    this.inventory.add({type:'gear',name:'Shardblade',slot:'Weapon',atk:6,rarity:'rare'});
+    this.shop.add({type:'gear',name:'Iron Chest',slot:'Chest',def:4,price:120}); this.shop.add({type:'rune',rune:'Aether',qty:50,price:60});
+    this.quests.add({id:'q1',name:'Meet the Banker',desc:'Open the bank.'}); this.quests.add({id:'q2',name:'Harvest Crystal',desc:'Gather 50 crystals.'});
+    // banker / shop
+    this.banker={name:'Banker',banker:true,level:9}; this.banker.mesh=BABYLON.MeshBuilder.CreateSphere('banker',{diameter:2.4},this.scene); this.banker.mesh.position.set(8,1.2,10); const bm=new BABYLON.StandardMaterial('bm',this.scene); bm.emissiveColor=new BABYLON.Color3(1,0.9,0.6); this.banker.mesh.material=bm;
+    this.merchant={name:'Merchant',shop:true,level:5}; this.merchant.mesh=BABYLON.MeshBuilder.CreateSphere('merchant',{diameter:2.4},this.scene); this.merchant.mesh.position.set(-6,1.2,10); const sm=new BABYLON.StandardMaterial('sm',this.scene); sm.emissiveColor=new BABYLON.Color3(0.8,1,0.9); this.merchant.mesh.material=sm;
+    // few NPCs
+    this.npcs.spawn(1,6,0); this.npcs.spawn(2,-10,8);
+  }
+  events(){
+    addEventListener('resize',fitCanvas); addEventListener('orientationchange',fitCanvas);
+    this.scene.onPointerObservable.add(pi=>{
+      if(pi.type===BABYLON.PointerEventTypes.POINTERDOWN){
+        const ev=pi.event; const pick=this.scene.pick(this.scene.pointerX,this.scene.pointerY);
+        if(ev.button===0 && pick.hit){ this.player.moveTo(pick.pickedPoint); hideCtx(); }
+        if(ev.button===2){ hideCtx(); if(pick.hit){ const obj=this.npcs.byMesh(pick.pickedMesh) || (pick.pickedMesh===this.banker.mesh?this.banker:null) || (pick.pickedMesh===this.merchant.mesh?this.merchant:null); if(obj){ showCtxNPC(obj,ev.clientX,ev.clientY,this);} else { const t=this.tiles.infoAt(pick.pickedPoint); showCtxTile(t,ev.clientX,ev.clientY,this);} } ev.preventDefault(); }
+      }
+    });
+    const B=DOM.buttons;
+    B.inv.onclick=()=>this.toggle('inv'); B.equip.onclick=()=>this.toggle('equip'); B.bank.onclick=()=>this.toggle('bank'); B.spell.onclick=()=>this.toggle('spell'); B.quest.onclick=()=>this.toggle('quest'); B.shop.onclick=()=>this.toggle('shop'); B.portal.onclick=()=>this.toggle('portal'); B.dev.onclick=()=>this.toggle('dev');
+    B.cam.onclick=()=>{ this.mode=this.mode==='follow'?'free':'follow'; this.camera.setMode(this.mode); };
+    B.save.onclick=()=>this.save(); B.load.onclick=()=>this.load();
+    // NPC quick buttons
+    DOM.npc.m.onclick=()=>this.combat.setMode('melee'); DOM.npc.r.onclick=()=>this.combat.setMode('ranged'); DOM.npc.x.onclick=()=>this.combat.setMode('magic'); DOM.npc.s.onclick=()=>this.combat.stop();
+    // Tile HUD
+    DOM.tile.buy.onclick=()=>this.buyTileHere(); DOM.tile.portal.onclick=()=>this.mkPortalHere(); DOM.tile.close.onclick=()=>DOM.tile.root.style.display='none';
+    // Keys
+    addEventListener('keydown',(e)=>{
+      if(e.key>='1'&&e.key<='9'){this.spells.castSlot((+e.key)-1);}
+      const s=(e.shiftKey?8:4); if(e.key.startsWith('Arrow')) this.camera.pan(e.key,s);
+    });
+  }
+  toggle(name){
+    const P=DOM.panels; Object.values(P).forEach(el=>el.classList.add('hidden'));
+    const el=P[name]; if(!el) return; el.classList.remove('hidden'); this.openPanel=name;
+    if(name==='inv') this.ui.renderInv(); if(name==='equip') this.ui.renderEquip(); if(name==='bank') this.ui.renderBank(); if(name==='spell') this.spells.render(); if(name==='quest') this.quests.render(); if(name==='shop') this.shop.render(); if(name==='portal') this.network.render();
+  }
+  loop(){ this.engine.runRenderLoop(()=>{
+    this.scene.render();
+    this.player.update(this.mode);
+    this.npcs.update(this.player,this.engine.getDeltaTime());
+    this.resources.update(this.player,this.engine.getDeltaTime(),()=>this.quests.complete('q2'));
+    this.combat.update(this.engine.getDeltaTime());
+    this.weather.update(this.engine.getDeltaTime());
+    this.ui.update();
+  }); }
+  save(){ const data={inv:this.inventory.items,bank:this.bank.items,equip:this.equipment.slots,gold:this.gold,aether:this.aether,level:this.player.level,xp:this.player.xp,tiles:[...this.tiles.owned],portals:this.network.portals}; localStorage.setItem('sc_v36s',JSON.stringify(data)); CHAT.log('[Save] Stored.'); }
+  load(){ const raw=localStorage.getItem('sc_v36s'); if(!raw) return CHAT.log('[Load] No save.'); const d=JSON.parse(raw); this.inventory.items=d.inv; this.bank.items=d.bank; this.equipment.slots=d.equip; this.gold=d.gold; this.aether=d.aether; this.player.level=d.level; this.player.xp=d.xp; this.tiles.owned=new Set(d.tiles||[]); this.network.portals=d.portals||[]; this.ui.renderInv(); this.ui.renderBank(); this.ui.renderEquip(); this.network.render(); CHAT.log('[Load] Restored.'); }
+  buyTileHere(){ const p=this.player.mesh.position; const t=this.tiles.infoAt(p); if(this.aether>=t.value){ this.aether-=t.value; this.tiles.owned.add(`${t.gx},${t.gz}`); CHAT.log(`[Tile] Bought ${t.gx},${t.gz}`);} else CHAT.log('[Tile] Need Æ'); }
+  mkPortalHere(){ const p=this.player.mesh.position; const t=this.tiles.infoAt(p); const key=`${t.gx},${t.gz}`; if(!this.tiles.owned.has(key)) return CHAT.log('[Portal] Own the tile first.'); const fee=parseInt(prompt('Portal fee (gold)','10'))||0; const name=prompt('Portal name','Gate '+key)||('Gate '+key); this.network.create({gx:t.gx,gz:t.gz,name,fee}); }
+}
+
+/* ===== Camera ===== */
+class Cam{
+  constructor(scene,canvas,target){
+    this.cam=new BABYLON.ArcRotateCamera('cam',Math.PI*1.2,0.95,26,target,scene);
+    this.cam.attachControl(canvas,true); this.cam.inertia=0; this.cam.panningInertia=0; this.cam.wheelPrecision=50; this.cam.lowerRadiusLimit=8; this.cam.upperRadiusLimit=160; this.target=target; this.mode='free';
+  }
+  setMode(m){ this.mode=m; this.cam.lockedTarget=(m==='follow')?this.target:null; }
+  pan(key,step){ const dir=new BABYLON.Vector3(Math.cos(this.cam.alpha),0,Math.sin(this.cam.alpha)); const right=new BABYLON.Vector3(-dir.z,0,dir.x); let d=new BABYLON.Vector3(); if(key==='ArrowUp') d=dir.scale(step); if(key==='ArrowDown') d=dir.scale(-step); if(key==='ArrowLeft') d=right.scale(-step); if(key==='ArrowRight') d=right.scale(step); this.cam.target.addInPlace(d); if(this.mode==='follow'){ this.cam.lockedTarget=null; this.mode='free'; } }
+}
+
+/* ===== Player / Inv / Equip ===== */
+class Player{
+  constructor(scene){ this.scene=scene; this.mesh=BABYLON.MeshBuilder.CreateCapsule('player',{height:3,radius:1},scene); this.mesh.position.set(0,1.5,0); const m=new BABYLON.StandardMaterial('pm',scene); m.emissiveColor=new BABYLON.Color3(1,1,1); this.mesh.material=m; this.target=this.mesh.position.clone(); this.speed=0.055; this.hpMax=100; this.hp=100; this.manaMax=100; this.mana=100; this.shield=0; this.xp=0; this.level=1; }
+  moveTo(p){ this.target.copyFrom(p); }
+  update(mode){ const v=this.target.subtract(this.mesh.position); const L=v.length(); if(L>0.02){ v.normalize(); this.mesh.position.addInPlace(v.scale(this.speed*(game.engine.getFps()?60/game.engine.getFps():1)*4.5)); } if(mode==='follow') game.camera.cam.target=this.mesh.position; }
+}
+class Inventory{ constructor(size){ this.items=new Array(size).fill(null); } add(it){ if(it.type==='rune'){ for(let i=0;i<this.items.length;i++){const a=this.items[i]; if(a&&a.type==='rune'&&a.rune===it.rune){ a.qty=(a.qty||0)+(it.qty||1); return true;}} } for(let i=0;i<this.items.length;i++) if(!this.items[i]){this.items[i]=it; return true;} CHAT.log('[Inventory] Full'); return false; } removeAt(i){ this.items[i]=null; } }
+class Equipment{ constructor(){ this.slots={Head:null,Chest:null,Legs:null,Boots:null,Gloves:null,Weapon:null,Offhand:null,Amulet:null,Ring:null,Cape:null,Belt:null}; } equip(slot,it){ this.slots[slot]=it; } }
+
+/* ===== Resources ===== */
+class Resources{
+  constructor(scene){ this.scene=scene; this.nodes=[this._n('iron','#00ffff',-12,2,5000),this._n('tree','#33ff33',14,-6,4000),this._n('fish','#3399ff',-16,16,3000),this._n('crystal','#ff66ff',12,12,6000)]; this.tally={iron:0,tree:0,fish:0,crystal:0}; }
+  _n(id,color,x,z,max){ const m=BABYLON.MeshBuilder.CreateSphere(id,{diameter:3},this.scene); const mat=new BABYLON.StandardMaterial(id+'m',this.scene); mat.emissiveColor=BABYLON.Color3.FromHexString(color); m.material=mat; m.position.set(x,1.5,z); return {id,mesh:m,cur:max,max,resp:0}; }
+  update(p,dt,onCrystal){ for(const n of this.nodes){ const d=BABYLON.Vector3.Distance(p.mesh.position,n.mesh.position); if(d<7 && n.cur>0){ const amt=Math.min(n.cur,1+(Math.random()*3|0)); n.cur-=amt; this.tally[n.id]+=amt; if(n.id==='crystal'&&this.tally.crystal>=50) onCrystal(); } if(n.cur<=0){ n.resp+=dt; if(n.resp>15000){ n.cur=n.max;n.resp=0; CHAT.log('[Resource] '+n.id+' respawned'); } } } }
+}
+
+/* ===== NPCs ===== */
+class NPCSystem{
+  constructor(scene){ this.scene=scene; this.npcs=[]; this.db={1:{name:'Goblin',hp:80,atk:6,def:2},2:{name:'Wolf',hp:70,atk:7,def:1},3:{name:'Wisp',hp:60,atk:4,def:1},4:{name:'Golem',hp:140,atk:10,def:6}}; this.nextId=1; }
+  spawn(id,x,z){ const T=this.db[id]||this.db[1]; const mesh=BABYLON.MeshBuilder.CreateSphere('npc',{diameter:2.6},this.scene); mesh.position.set(x,1.3,z); const m=new BABYLON.StandardMaterial('n',this.scene); m.emissiveColor=new BABYLON.Color3(1,0.9,0.6); mesh.material=m; const lvl=2+(Math.random()*10|0); const hp=Math.round(T.hp+lvl*3); const npc={uid:this.nextId++,id,name:`${T.name}`,mesh,level:lvl,hp,maxhp:hp,atk:T.atk+(lvl/2|0),def:T.def+(lvl/4|0),dead:false,loot:[{type:'rune',rune:'Aether',qty:5}],xp:30,gold:10}; this.npcs.push(npc); return npc; }
+  random(){ return this.spawn(1+(Math.random()*Object.keys(this.db).length|0), (Math.random()*20-10), (Math.random()*20-10)); }
+  byMesh(m){ return this.npcs.find(n=>n.mesh===m); }
+  update(player,dt){ for(const n of this.npcs){ if(n.dead) continue; const d=BABYLON.Vector3.Distance(n.mesh.position,player.mesh.position); if(d<18){ const dir=player.mesh.position.subtract(n.mesh.position).normalize(); n.mesh.position.addInPlace(dir.scale(0.006*dt)); if(d<2.2 && (!n._cd || performance.now()-n._cd>1000)){ n._cd=performance.now(); const dmg=Math.max(1,n.atk-player.level); player.hp=Math.max(0,player.hp-dmg); CHAT.log('[Hit] You took '+dmg); } } } }
+}
+
+/* ===== Combat ===== */
+class Combat{
+  constructor(scene,player,npcs){ this.scene=scene; this.player=player; this.npcs=npcs; this.proj=[]; this.target=null; this.mode='melee'; this.cool=0; }
+  select(n){ this.target=n; this.panel(n); }
+  setMode(m){ this.mode=m; CHAT.log('[Combat] '+m); if(this.target) this.panel(this.target); }
+  stop(){ this.target=null; DOM.npc.root.style.display='none'; }
+  panel(n){ DOM.npc.name.textContent=n.name; DOM.npc.lv.textContent='Lv '+n.level; DOM.npc.stats.textContent='HP '+n.hp+'/'+n.maxhp; DOM.npc.hp.style.width=(n.hp/n.maxhp*100)+'%'; DOM.npc.root.style.display='block'; }
+  cast(target,spell){ const m=BABYLON.MeshBuilder.CreateSphere('proj',{diameter:.9},this.scene); const mat=new BABYLON.StandardMaterial('pm',this.scene); mat.emissiveColor=BABYLON.Color3.FromHexString(spell.color||'#ff4444'); m.material=mat; m.position.copyFrom(this.player.mesh.position); const dir=target.mesh.position.subtract(this.player.mesh.position).normalize(); this.proj.push({m,v:dir.scale(.8),dmg:spell.dmg,t:target,aoe:spell.aoe||0}); }
+  update(dt){ const now=performance.now(); if(this.target && !this.target.dead){ const d=BABYLON.Vector3.Distance(this.player.mesh.position,this.target.mesh.position); if(now>this.cool){ if(this.mode==='melee' && d<2.8){ this.hit(this.target,8+(Math.random()*4|0)); this.cool=now+900; } if(this.mode==='ranged' && d<12){ this.cast(this.target,{dmg:7,color:'#ffd27d'}); this.cool=now+800; } if(this.mode==='magic' && d<14){ this.cast(this.target,{dmg:11,color:'#99ddff'}); this.cool=now+1100; } } DOM.npc.stats.textContent='HP '+Math.max(0,this.target.hp)+'/'+this.target.maxhp; DOM.npc.hp.style.width=Math.max(0,(this.target.hp/this.target.maxhp*100))+'%'; if(this.target.hp<=0){ this.target.dead=True; this.drop(this.target); CHAT.log('[Defeat] '+this.target.name); this.stop(); this.target.mesh.dispose(); } } for(const p of this.proj){ p.m.position.addInPlace(p.v); const hit=p.t&&!p.t.dead&&BABYLON.Vector3.Distance(p.m.position,p.t.mesh.position)<1.6; if(hit){ this.hit(p.t,p.dmg); if(p.aoe>0){ for(const m of this.npcs.npcs){ if(m!==p.t&&!m.dead&&BABYLON.Vector3.Distance(m.mesh.position,p.t.mesh.position)<=p.aoe) this.hit(m,Math.max(1,Math.floor(p.dmg*0.6))); } } p.m.dispose(); p.done=True; } } this.proj=this.proj.filter(x=>!x.done); }
+  hit(npc,dmg){ npc.hp-=dmg; }
+  drop(n){ const it=BABYLON.MeshBuilder.CreateSphere('loot',{diameter:1.2},this.scene); const mat=new BABYLON.StandardMaterial('lm',this.scene); mat.emissiveColor=new BABYLON.Color3(0.9,0.8,0.1); it.material=mat; it.position.copyFrom(n.mesh.position); it.actionManager=new BABYLON.ActionManager(this.scene); it.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnPickTrigger,()=>{ n.loot.forEach(itm=>game.inventory.add(itm)); CHAT.log('[Pickup] Loot'); it.dispose(); game.ui.renderInv(); })); }
+}
+
+/* ===== Spells ===== */
+class Spells{
+  constructor(combat,inventory){ this.combat=combat; this.inventory=inventory; this.slots=[{name:'Firebolt',dmg:12,color:'#ff7733',cost:{Embri:1}},{name:'Ice Spike',dmg:10,color:'#99ddff',cost:{Glacia:1}},{name:'Gust',dmg:8,color:'#a3f5ff',cost:{Zeph:1}},{name:'Quake',dmg:15,color:'#c8a36d',cost:{Terra:2},aoe:3},{name:'Heal',dmg:-15,color:'#77ffbb',cost:{Vitae:2},heal:true}]; this.cool=[0,0,0,0,0]; }
+  castSlot(i){ const s=this.slots[i]; if(!s) return; if(this.cool[i]>Date.now()) return CHAT.log('[Spell] Cooling down'); const t=this.combat.target||this.near(); if(!t&&!s.heal) return CHAT.log('[Spell] No target'); if(!this.pay(s.cost) && !s.heal) return CHAT.log('[Spell] Need runes'); if(s.heal){ game.player.hp=Math.min(game.player.hpMax,game.player.hp+15); CHAT.log('[Heal] +15'); } else this.combat.cast(t,s); this.cool[i]=Date.now()+900; }
+  pay(cost){ if(!cost) return true; for(const k of Object.keys(cost)){ let need=cost[k]; for(let i=0;i<this.inventory.items.length;i++){ const it=this.inventory.items[i]; if(it&&it.type==='rune'&&it.rune===k){ const take=Math.min(need,it.qty||1); it.qty-=take; need-=take; if(it.qty<=0) this.inventory.items[i]=null; if(need<=0) break; } } if(need>0) return false; } return true; }
+  near(){ const pos=game.player.mesh.position; let best=null,bd=1e9; for(const n of game.npcs.npcs){ if(n.dead) continue; const d=BABYLON.Vector3.Distance(pos,n.mesh.position); if(d<bd){bd=d; best=n;} } return best; }
+  render(){ const g=DOM.grids.spell; g.innerHTML=''; this.slots.forEach((s,i)=>{ const d=document.createElement('div'); d.className='slot'; d.innerHTML=`<div style="font-size:10px;text-align:center">${s.name}</div>`; d.onclick=()=>this.castSlot(i); g.appendChild(d); }); }
+}
+
+/* ===== Shop / Quests ===== */
+class Shop{ constructor(g){ this.g=g; this.items=[];} add(it){ this.items.push(it);} render(){ const buy=DOM.grids.shopBuy; buy.innerHTML=''; this.items.forEach((it)=>{ const li=document.createElement('li'); const label=it.name?it.name:(it.rune?`${it.rune} x${it.qty}`:'Item'); const price=it.price||50; li.innerHTML=`<span>${label} <b>${price}g</b></span>`; const btn=document.createElement('button'); btn.textContent='Buy'; btn.onclick=()=>{ if(game.gold>=price){game.gold-=price; game.inventory.add({...it}); game.ui.renderInv(); game.ui.update(); CHAT.log('[Shop] Bought '+label);} else CHAT.log('[Shop] Not enough gold.'); }; li.appendChild(btn); buy.appendChild(li); }); const sell=DOM.grids.shopSell; sell.innerHTML=''; game.inventory.items.forEach((it,i)=>{ if(!it) return; const price = it.type==='gear'? Math.max(10,(it.atk||it.def||1)*15) : (it.type==='rune'? (it.qty||1) : 5); const li=document.createElement('li'); li.innerHTML=`<span>${it.name||it.rune} <b>${price}g</b></span>`; const btn=document.createElement('button'); btn.textContent='Sell'; btn.onclick=()=>{ game.gold+=price; game.inventory.removeAt(i); game.ui.renderInv(); game.ui.update(); this.render(); CHAT.log('[Shop] Sold '+(it.name||it.rune)); }; li.appendChild(btn); sell.appendChild(li); }); } }
+class Quests{ constructor(g){ this.g=g; this.q=[];} add(q){this.q.push({...q,done:false});} complete(id){const f=this.q.find(x=>x.id===id); if(f && !f.done){f.done=true; CHAT.log('[Quest] '+f.name+' complete');}} render(){ const ul=DOM.grids.quest; ul.innerHTML=''; this.q.forEach(q=>{ const li=document.createElement('li'); li.textContent=`${q.name} — ${q.done?'Complete':'In progress'}`; ul.appendChild(li); }); }}
+
+/* ===== Tiles + Portals ===== */
+class Tiles{ constructor(scene){ this.scene=scene; this.owned=new Set(); } infoAt(p){ const TILE=5,gx=Math.floor(p.x/TILE),gz=Math.floor(p.z/TILE); let type='field',best=1e9,near=null; for(const n of game.resources.nodes){ const d=BABYLON.Vector3.Distance(n.mesh.position,p); if(d<best){best=d; near=n;} } if(best<10) type=near.id; return {gx,gz,type,value:100,owner:this.owned.has(`${gx},${gz}`)?'You':'—',more:`Nearest: ${near?near.id:'—'} (${best.toFixed(0)}u)`}; } }
+class AetherNetwork{ constructor(g){ this.g=g; this.portals=[]; } create(p){ this.portals.push({...p,owner:'You'}); CHAT.log(`[Portal] ${p.name} @ (${p.gx},${p.gz}) fee ${p.fee}g`); this.render(); } render(){ const root=DOM.grids.portal; root.innerHTML=''; if(this.portals.length===0){ root.textContent='No portals yet.'; return; } this.portals.forEach((p,i)=>{ const row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed #5630a0;padding:6px 0'; row.innerHTML=`<div><b>${p.name}</b> — (${p.gx},${p.gz}) • fee <b>${p.fee}g</b></div>`; const go=document.createElement('button'); go.textContent='Travel'; go.onclick=()=>{ if(game.gold>=p.fee){ game.gold-=p.fee; game.player.mesh.position.x=p.gx*5+2; game.player.mesh.position.z=p.gz*5+2; CHAT.log('[Portal] Traveled via '+p.name); game.ui.update(); } else CHAT.log('[Portal] Need gold'); }; row.appendChild(go); root.appendChild(row); }); } }
+
+/* ===== Weather ===== */
+class Weather{ constructor(scene,sun){ this.scene=scene; this.t=0; this.sun=sun; } update(dt){ this.t+=dt; const s=0.55+0.45*Math.sin(this.t/12000); this.scene.clearColor=new BABYLON.Color4(0.08*s,0.12*s,0.22*s,1); this.sun.intensity=0.8*s+0.2; } set(m){ this.scene.clearColor=(m==='day')?new BABYLON.Color4(0.4,0.6,0.95,1):new BABYLON.Color4(0.05,0.06,0.12,1); this.sun.intensity=(m==='day')?1.0:0.3; } }
+
+/* ===== UI ===== */
+class UI{
+  constructor(g){ this.g=g; }
+  renderInv(){ const g=DOM.grids.inv; g.innerHTML=''; this.g.inventory.items.forEach((it,i)=>{ const d=document.createElement('div'); d.className='slot'; if(it){ d.innerHTML= it.type==='rune'? `<svg viewBox='0 0 24 24' width='28' height='28'><circle cx='12' cy='12' r='9' fill='#66e0ff30' stroke='#66e0ff'/></svg><div class='qty'>x${it.qty||1}</div>` : `<svg viewBox='0 0 24 24' width='28' height='28'><rect x='6' y='6' width='12' height='12' rx='2' fill='#c9b6ff33' stroke='#c9b6ff'/></svg><div class='qty' style='top:2px'>${it.name||it.slot}</div>`; d.onclick=()=>{ if(game.openPanel==='bank'){ if(game.bank.add(it)){game.inventory.removeAt(i); this.renderInv(); this.renderBank();} } else if(game.openPanel==='equip'){ if(it.type==='gear'){ game.equipment.equip(it.slot,it); game.inventory.removeAt(i); this.renderInv(); this.renderEquip(); } } }; } g.appendChild(d); }); }
+  renderEquip(){ const g=DOM.grids.equip; g.innerHTML=''; Object.keys(this.g.equipment.slots).forEach(slot=>{ const it=this.g.equipment.slots[slot]; const d=document.createElement('div'); d.className='slot'; d.innerHTML = it? `<svg viewBox='0 0 24 24' width='28' height='28'><rect x='6' y='6' width='12' height='12' rx='2' fill='#c9b6ff33' stroke='#c9b6ff'/></svg><div class='qty' style='top:2px'>${it.name}</div>` : `<svg viewBox='0 0 24 24' width='28' height='28'><rect x='6' y='6' width='12' height='12' rx='2' fill='#c9b6ff22' stroke='#c9b6ff99'/></svg>`; g.appendChild(d); }); }
+  renderBank(){ const g=DOM.grids.bank; g.innerHTML=''; this.g.bank.items.forEach((it,i)=>{ const d=document.createElement('div'); d.className='slot'; if(it){ d.innerHTML= it.type==='rune'? `<svg viewBox='0 0 24 24' width='28' height='28'><circle cx='12' cy='12' r='9' fill='#66e0ff30' stroke='#66e0ff'/></svg><div class='qty'>x${it.qty||1}</div>` : `<svg viewBox='0 0 24 24' width='28' height='28'><rect x='6' y='6' width='12' height='12' rx='2' fill='#c9b6ff33' stroke='#c9b6ff'/></svg><div class='qty' style='top:2px'>${it.name||it.slot}</div>`; d.onclick=()=>{ if(game.inventory.add(it)){ game.bank.items[i]=null; this.renderBank(); this.renderInv(); } }; } g.appendChild(d); }); }
+  update(){ const p=this.g.player; DOM.hud.hpT.textContent=`${Math.floor(p.hp)}/${p.hpMax}`; DOM.hud.hp.style.width=(p.hp/p.hpMax*100)+'%'; DOM.hud.mpT.textContent=`${Math.floor(p.mana)}/${p.manaMax}`; DOM.hud.mp.style.width=(p.mana/p.manaMax*100)+'%'; DOM.hud.shT.textContent=`${Math.floor(p.shield)}`; DOM.hud.sh.style.width=(p.shield/(p.hpMax*.75)*100)+'%'; DOM.hud.gold.textContent=this.g.gold; DOM.hud.aether.textContent=this.g.aether; this.mini(); const a=game.camera.cam.alpha; const deg=Math.round(((Math.PI*1.5 - a) * 180/Math.PI + 360)%360); $('comp').textContent=(deg>=45&&deg<135)?'W':(deg>=135&&deg<225)?'S':(deg>=225&&deg<315)?'E':'N'; }
+  mini(){ const ctx=DOM.mini; ctx.clearRect(0,0,180,180); ctx.strokeStyle='#a655ff'; ctx.strokeRect(0,0,180,180); const sx=8,sz=8; const p=this.g.player.mesh.position; ctx.fillStyle='#fff'; ctx.fillRect(p.x*sx+90-2,p.z*sz+90-2,4,4); ctx.fillStyle='#ffd27d'; this.g.npcs.npcs.forEach(n=>{ if(n.dead) return; const m=n.mesh.position; ctx.fillRect(m.x*sx+90-2,m.z*sz+90-2,4,4);}); [this.g.banker.mesh,this.g.merchant.mesh].forEach(m=>{const q=m.position; ctx.fillStyle='#fffa9a'; ctx.fillRect(q.x*sx+90-2,q.z*sz+90-2,4,4);}); this.g.resources.nodes.forEach(n=>{const q=n.mesh.position; ctx.fillStyle=RESIC[n.id]||'#fff'; ctx.fillRect(q.x*sx+90-2,q.z*sz+90-2,3,3);}); }
+}
+
+/* ===== Dev / Context / Tile HUD ===== */
+class Dev{ constructor(g){ $('spawnNpc').onclick=()=>{ const id=+$('npcId').value||1; g.npcs.spawn(id,g.player.mesh.position.x+Math.random()*6-3,g.player.mesh.position.z+Math.random()*6-3); }; $('spawnRnd').onclick=()=>g.npcs.random(); $('god').onclick=()=>{ g.player.hp=9999; g.player.mana=9999; g.gold=999999; g.aether+=100; }; $('tp').onclick=()=>{ g.player.mesh.position.addInPlace(new BABYLON.Vector3(10,0,10)); }; $('resetNodes').onclick=()=>{ g.resources.nodes.forEach(n=>{n.cur=n.max;n.resp=0;}); }; $('day').onclick=()=>g.weather.set('day'); $('night').onclick=()=>g.weather.set('night'); $('buyTile').onclick=()=>g.buyTileHere(); $('mkPortal').onclick=()=>g.mkPortalHere(); } }
+function cItem(txt,fn){ const d=document.createElement('div'); d.className='ctxItem'; d.textContent=txt; d.onclick=()=>{fn(); hideCtx();}; return d; }
+function hideCtx(){ let c=$('ctx'); if(!c){ c=document.createElement('div'); c.id='ctx'; document.body.appendChild(c);} c.style.display='none'; }
+function showCtxNPC(n,x,y,game){ let c=$('ctx'); if(!c){ c=document.createElement('div'); c.id='ctx'; document.body.appendChild(c);} c.innerHTML=''; if(n.banker) c.appendChild(cItem('Open Bank',()=>game.toggle('bank'))); if(n.shop) c.appendChild(cItem('Trade',()=>game.toggle('shop'))); if(!n.banker&&!n.shop){ c.appendChild(cItem('Attack (Melee)',()=>{ game.combat.select(n); game.combat.setMode('melee'); })); c.appendChild(cItem('Attack (Ranged)',()=>{ game.combat.select(n); game.combat.setMode('ranged'); })); c.appendChild(cItem('Attack (Magic)',()=>{ game.combat.select(n); game.combat.setMode('magic'); })); c.appendChild(cItem('Examine',()=>{ game.combat.select(n); })); } c.appendChild(cItem('Close',()=>{})); c.style.left=x+'px'; c.style.top=y+'px'; c.style.display='block'; }
+function showCtxTile(t,x,y,game){ let c=$('ctx'); if(!c){ c=document.createElement('div'); c.id='ctx'; document.body.appendChild(c);} c.innerHTML=''; c.appendChild(cItem('Examine',()=>{ showTileHUD(t,x+12,y+12); })); c.appendChild(cItem('Buy Tile',()=>game.buyTileHere())); c.appendChild(cItem('Create Portal',()=>game.mkPortalHere())); c.appendChild(cItem('Close',()=>{})); c.style.left=x+'px'; c.style.top=y+'px'; c.style.display='block'; }
+function showTileHUD(t,sx,sy){ DOM.tile.title.textContent=`Tile (${t.gx}, ${t.gz})`; DOM.tile.type.textContent=t.type.toUpperCase(); DOM.tile.owner.textContent=t.owner; DOM.tile.value.textContent=t.value+' Æ'; DOM.tile.more.textContent=t.more; DOM.tile.root.style.left=(sx||20)+'px'; DOM.tile.root.style.top=(sy||20)+'px'; DOM.tile.root.style.display='block'; }
+
+/* ===== Boot ===== */
+let game=null;
+document.addEventListener('DOMContentLoaded',()=>{
+  if(!window.BABYLON){ alert('BabylonJS failed to load.'); return; }
+  game=new Game();
+  game.camera.cam.setPosition(new BABYLON.Vector3(24,18,-24));
+  game.camera.cam.target=game.player.mesh.position;
+  CHAT.init();
+});
+</script>
+</body>
+</html>
+"""
+p = Path("/mnt/data/aether_v36s_stable.html")
+p.write_text(html, encoding="utf-8")
+print(str(p))
